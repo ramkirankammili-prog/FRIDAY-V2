@@ -1,0 +1,14 @@
+{
+  "resourceLogs": [{
+    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "instagram-api"}}]},
+    "scopeLogs": [{"logRecords": [
+      {"severityText": "ERROR", "body": {"stringValue": "HTTP 500 on GET /feed"}, "traceId": "abc123", "timeUnixNano": "1758790921000000000"}
+    ]}]
+  }],
+  "resourceMetrics": [{
+    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "postgresql"}}]},
+    "scopeMetrics": [{"metrics": [
+      {"name": "db_latency_ms", "gauge": {"dataPoints": [{"asDouble": 610.0, "timeUnixNano": "1758790921000000000"}]}}
+    ]}]
+  }]
+}

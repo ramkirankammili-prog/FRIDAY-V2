@@ -1,0 +1,10 @@
+2026-09-25T10:41:50Z INFO nginx: GET /feed 200 OK rps=520
+2026-09-25T10:41:55Z INFO postgresql: query ok latency=45ms
+2026-09-25T10:42:01Z WARNING postgresql: slow query SELECT * FROM posts WHERE user_id=? latency=520ms trace_id=a1b2c3d4
+2026-09-25T10:42:04Z WARNING postgresql: connection pool utilization high pool_util=91%
+2026-09-25T10:42:07Z WARNING instagram-api: span db.query waited for connection 640ms trace_id=a1b2c3d4
+2026-09-25T10:42:10Z ERROR instagram-api: HTTP 500 Internal Server Error on GET /feed trace_id=a1b2c3d4
+2026-09-25T10:42:12Z ERROR instagram-api: Upstream timeout GET /feed exceeded 2000ms trace_id=e5f6a7b8
+2026-09-25T10:42:13Z ERROR nginx: User request failed 502 upstream error on GET /feed trace_id=e5f6a7b8
+2026-09-25T10:42:15Z ERROR instagram-api: HTTP 500 Internal Server Error on GET /feed trace_id=c9d0e1f2
+2026-09-25T10:42:20Z INFO instagram-api: API version changed from v2.3.1 to v2.3.2

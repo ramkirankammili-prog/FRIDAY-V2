@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FRIDAY — AI Incident Investigation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+/* ============================================================
+   FRIDAY design system — "mission control for engineering incidents"
+   Dark navy/glass by default; light theme available via [data-theme="light"].
+   One accent (amber) reserved for actions/warnings; cyan reserved for
+   live/telemetry signal; red/green stay strictly semantic (bad/good).
+   ============================================================ */
+:root{
+  --bg:#070a10; --blob1: rgba(89,213,201,.07); --blob2: rgba(242,169,59,.05);
+  --panel: rgba(255,255,255,.045); --panel2: rgba(255,255,255,.075); --panel-solid:#0d1119;
+  --border: rgba(255,255,255,.09); --border-soft: rgba(255,255,255,.055);
+  --text:#e7ecf3; --text-dim:#8b96a7; --text-faint:#57616f;
+  --amber:#f2a93b; --green:#57d38c; --red:#ff5d6c; --blue:#59d5c9; --violet:#9b8cf2;
+  --crit:#ff5d6c; --high:#f2a93b; --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+  --shadow: 0 10px 30px rgba(0,0,0,.35); --blur: blur(14px);
+}
+:root[data-theme="light"]{
+  --bg:#eef1f6; --blob1: rgba(31,167,154,.10); --blob2: rgba(185,121,31,.09);
+  --panel: rgba(255,255,255,.65); --panel2: rgba(255,255,255,.9); --panel-solid:#ffffff;
+  --border: rgba(27,35,48,.09); --border-soft: rgba(27,35,48,.06);
+  --text:#1b2330; --text-dim:#5b6675; --text-faint:#8b93a3;
+  --amber:#b9791f; --green:#1f9d63; --red:#d1495b; --blue:#1a8f84; --violet:#7a68d6;
+  --crit:#d1495b; --high:#b9791f;
+  --shadow: 0 8px 24px rgba(27,35,48,.08);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(560px 420px at 8% -6%, var(--blob1), transparent 60%),
+    radial-gradient(520px 420px at 96% 8%, var(--blob2), transparent 60%);
+  background-attachment:fixed; background-repeat:no-repeat;
+}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.mono{font-family:var(--mono)}
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ---- glass surfaces ---- */
+.side{width:224px;flex:none;background:var(--panel);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  border-right:1px solid var(--border);display:flex;flex-direction:column}
+.brand{padding:18px 18px 14px;border-bottom:1px solid var(--border);display:flex;gap:11px;align-items:center}
+.brand-icon{
+  width:34px;height:34px;border-radius:9px;flex:none;position:relative;overflow:hidden;
+  background:linear-gradient(160deg, rgba(89,213,201,.18), rgba(242,169,61,.10));
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:600;color:var(--blue);
+}
+.brand-icon::after{
+  content:"";position:absolute;top:0;left:-60%;width:45%;height:100%;
+  background:linear-gradient(90deg, transparent, rgba(89,213,201,.55), transparent);
+  animation: friday-scan 4.2s ease-in-out infinite;
+}
+@keyframes friday-scan{ 0%{left:-60%} 45%{left:115%} 100%{left:115%} }
+@media (prefers-reduced-motion: reduce){ .brand-icon::after{ animation:none; display:none } }
+.brand .f{font-family:var(--mono);font-weight:600;font-size:19px;letter-spacing:1px;color:var(--text)}
+.brand .f span{color:var(--amber)}
+.brand .sub{color:var(--text-faint);font-size:10.5px;margin-top:2px;line-height:1.4}
+.nav{flex:1;overflow-y:auto;padding:10px 8px}
+.nav button{width:100%;text-align:left;background:none;border:none;color:var(--text-dim);padding:8px 10px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:9px;margin-bottom:1px;font-family:var(--sans)}
+.nav button:hover{background:var(--panel2);color:var(--text)}
+.nav button.active{background:var(--panel2);color:var(--text);box-shadow:inset 2px 0 0 var(--amber)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--text-faint);flex:none}
+.side-foot{padding:12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-faint);display:flex;justify-content:space-between;align-items:center}
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+.topbar{height:56px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:var(--panel);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);gap:14px}
+.topbar h1{font-size:15px;font-weight:600;margin:0;white-space:nowrap}
+.topbar .stat{display:flex;gap:22px}
+.tstat{text-align:right}
+.tstat b{display:block;font-family:var(--mono);font-size:14px}
+.tstat span{color:var(--text-faint);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.content{padding:22px;flex:1}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
+.card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);font-weight:600}
+.kpi b{font-family:var(--mono);font-size:25px;font-weight:600;display:block}
+.kpi span{color:var(--text-dim);font-size:12px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--mono)}
+.b-crit{background:rgba(255,93,108,.14);color:var(--red)} .b-high{background:rgba(242,169,59,.14);color:var(--amber)}
+.b-ok{background:rgba(87,211,140,.14);color:var(--green)} .b-info{background:rgba(89,213,201,.14);color:var(--blue)}
+.b-mid{background:rgba(155,140,242,.14);color:var(--violet)}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:13px;cursor:pointer;font-family:var(--sans);font-weight:500}
+.btn:hover{border-color:var(--blue)}
+.btn-amber{background:var(--amber);color:#1a1204;border-color:var(--amber);font-weight:600}
+.btn-amber:hover{filter:brightness(1.08)}
+.btn-ghost{background:none;border:1px solid var(--border)}
+.btn:disabled{opacity:.4;cursor:default}
+.icon-btn{width:32px;height:32px;border-radius:8px;background:var(--panel2);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+.icon-btn:hover{color:var(--text);border-color:var(--blue)}
+.hamburger{display:none}
+.nav-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:19}
+.row{display:flex;align-items:center;gap:10px}
+.between{display:flex;align-items:center;justify-content:space-between}
+.ev-line{display:grid;grid-template-columns:70px 100px 68px 1fr 90px;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border-soft);font-size:12.5px;align-items:center}
+.ev-line:hover{background:var(--panel2)}
+.ev-line.new-row{animation: friday-row-in .5s ease-out}
+@keyframes friday-row-in{ from{ background:rgba(89,213,201,.14) } to{ background:transparent } }
+@media (prefers-reduced-motion: reduce){ .ev-line.new-row{ animation:none } }
+.sev{font-family:var(--mono);font-weight:600;font-size:10.5px;padding:2px 6px;border-radius:4px;width:fit-content}
+.sev-ERROR,.sev-CRITICAL{background:rgba(255,93,108,.16);color:var(--red)}
+.sev-WARNING{background:rgba(242,169,59,.16);color:var(--amber)}
+.sev-INFO{background:rgba(89,213,201,.14);color:var(--blue)}
+.sev-DEBUG{background:var(--panel2);color:var(--text-faint)}
+.msg{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trace{color:var(--text-faint);font-family:var(--mono);font-size:11px}
+.empty{color:var(--text-faint);text-align:center;padding:50px 20px;font-size:13px}
+.empty b{display:block;color:var(--text-dim);font-size:14px;margin-bottom:6px}
+.inc-card{border:1px solid var(--border);background:var(--panel2);border-radius:8px;padding:13px 14px;margin-bottom:10px;cursor:pointer}
+.inc-card:hover{border-color:var(--blue)}
+.inc-card.sel{border-color:var(--amber)}
+.pill-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap}
+.pill-tabs button{background:none;border:none;color:var(--text-dim);padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--sans)}
+.pill-tabs button.active{color:var(--text);border-bottom-color:var(--amber)}
+.evline{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft)}
+.evline:last-child{border:none}
+.stagepill{font-size:9.5px;font-family:var(--mono);text-transform:uppercase;padding:1px 6px;border-radius:3px;flex:none;height:fit-content;margin-top:2px}
+.stg-root{background:rgba(255,93,108,.15);color:var(--red)}
+.stg-contributing{background:rgba(242,169,59,.15);color:var(--amber)}
+.stg-downstream{background:rgba(89,213,201,.15);color:var(--blue)}
+.stg-impact{background:rgba(155,140,242,.15);color:var(--violet)}
+.hyp{border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;background:var(--panel2)}
+.hyp .hh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.hyp .title{font-weight:600;font-size:14.5px}
+.evd{margin:8px 0 0;padding:0;list-style:none}
+.evd li{font-size:12.5px;color:var(--text-dim);padding:3px 0 3px 16px;position:relative;line-height:1.5}
+.evd.sup li:before{content:"✓";position:absolute;left:0;color:var(--green)}
+.evd.mis li:before{content:"⚠";position:absolute;left:0;color:var(--amber)}
+.evd.con li:before{content:"✕";position:absolute;left:0;color:var(--red)}
+.section-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);margin:10px 0 2px;font-weight:600}
+textarea,input[type=text]{background:var(--panel-solid);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-family:var(--sans);font-size:13px}
+.chip{display:inline-block;background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:11.5px;color:var(--text-dim);margin:0 6px 6px 0;font-family:var(--mono)}
+.pipeline{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.pnode{padding:7px 12px;border:1px solid var(--border);border-radius:20px;font-size:11.5px;font-family:var(--mono);color:var(--text-dim);background:var(--panel2)}
+.parrow{color:var(--text-faint);font-size:13px}
+.copilot{display:flex;flex-direction:column;height:calc(100vh - 150px)}
+.cmsgs{flex:1;overflow-y:auto;padding:4px 2px}
+.cmsg{max-width:78%;padding:10px 13px;border-radius:9px;font-size:13px;line-height:1.55;margin-bottom:10px;white-space:pre-wrap}
+.cmsg.user{background:var(--panel2);margin-left:auto;border:1px solid var(--border)}
+.cmsg.ai{background:var(--panel);border:1px solid var(--border)}
+.cinput{display:flex;gap:8px;margin-top:10px}
+.cinput input{flex:1;padding:11px 13px}
+.svcnode{position:absolute;transform:translate(-50%,-50%);text-align:center}
+.svcbox{padding:9px 13px;border-radius:7px;border:1.5px solid var(--border);background:var(--panel2);font-size:12px;font-weight:600;white-space:nowrap}
+.svc-failing .svcbox{border-color:var(--red);background:rgba(255,93,108,.1);color:var(--red)}
+.svc-affected .svcbox{border-color:var(--amber);background:rgba(242,169,59,.08);color:var(--amber)}
+.svc-healthy .svcbox{color:var(--text-dim)}
+.svcnode .tel{font-size:9.5px;color:var(--text-faint);margin-top:3px;font-family:var(--mono)}
+.replay-scrub{width:100%}
+.step-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);opacity:.35}
+.step-item.active{opacity:1}
+.step-item.past{opacity:.7}
+.demolabel{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px;background:rgba(155,140,242,.15);color:var(--violet);font-weight:600}
+.srclabel{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:4px}
+.src-DEMO{background:rgba(155,140,242,.15);color:var(--violet)} .src-API{background:rgba(89,213,201,.15);color:var(--blue)}
+.src-UPLOADED{background:rgba(87,211,140,.15);color:var(--green)} .src-OTLP{background:rgba(242,169,59,.15);color:var(--amber)}
+.src-REAL{background:rgba(89,213,201,.15);color:var(--blue)} .src-AGENT{background:rgba(87,211,140,.15);color:var(--green)}
+.chartwrap{height:64px;display:flex;align-items:flex-end;gap:2px}
+.bar{flex:1;background:linear-gradient(to top, rgba(89,213,201,.6), rgba(89,213,201,.12));border-radius:1px 1px 0 0;min-height:2px}
+.progress{height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden;margin-top:6px}
+.progress > div{height:100%;background:var(--amber)}
+a.linklike{color:var(--blue);cursor:pointer;text-decoration:none;font-size:12.5px}
+.settingsrow{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-soft);font-size:13px}
+.settingsrow .k{color:var(--text-dim)}
+.settingsrow .v{font-family:var(--mono)}
+code.inline{background:var(--panel2);padding:1px 6px;border-radius:4px;font-family:var(--mono);font-size:12px;color:var(--amber)}
+
+/* ---- connection / health pill (reflects REAL state — never fakes "live") ---- */
+.conn-pill{display:flex;align-items:center;gap:7px;font-size:11.5px;font-family:var(--mono);padding:6px 11px;border-radius:20px;border:1px solid var(--border);background:var(--panel2)}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--text-faint)}
+.conn-pill.live .conn-dot{background:var(--green);box-shadow:0 0 0 3px rgba(87,211,140,.18)}
+.conn-pill.down .conn-dot{background:var(--red)}
+.conn-pill.live{color:var(--green)} .conn-pill.down{color:var(--red)}
+.clock{font-family:var(--mono);font-size:11.5px;color:var(--text-faint);white-space:nowrap}
+
+/* ---- offline full-screen state: shown INSTEAD of the dashboard, never alongside a fake healthy view ---- */
+.offline-screen{flex:1;display:flex;align-items:center;justify-content:center;padding:30px}
+.offline-card{max-width:420px;text-align:center;border:1px solid var(--border);background:var(--panel);border-radius:12px;padding:34px 30px;backdrop-filter:var(--blur)}
+.offline-card .dot{width:10px;height:10px;margin:0 auto 14px;background:var(--red)}
+.offline-card h2{margin:0 0 8px;font-size:16px}
+.offline-card p{color:var(--text-dim);font-size:13px;line-height:1.6;margin:0 0 4px}
+.offline-card .target{margin-top:14px;font-family:var(--mono);font-size:11.5px;color:var(--text-faint);word-break:break-all}
+
+/* ---- AI RCA snapshot centerpiece on Overview ---- */
+.rca-spot{border:1px solid var(--border);background:linear-gradient(160deg, var(--panel2), var(--panel));border-radius:12px;padding:20px;box-shadow:var(--shadow)}
+.rca-spot .eyebrow{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);font-weight:600}
+.rca-spot h2{margin:6px 0 4px;font-size:19px}
+.rca-spot .plain{color:var(--text-dim);font-size:13.5px;line-height:1.7;margin:10px 0 14px}
+.conf-ring{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.conf-num{font-family:var(--mono);font-size:30px;font-weight:600}
+
+/* ---- sparkline (real backend series only — never fabricated) ---- */
+.spark-svg{width:100%;height:52px;display:block}
+.spark-empty{height:52px;display:flex;align-items:center;color:var(--text-faint);font-size:11.5px}
+.chart-tile-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;font-size:11.5px;color:var(--text-dim)}
+.chart-tile-head strong{font-family:var(--mono);font-size:14px;color:var(--text)}
+
+/* ---- responsive: keep panels from overflowing on tablet / small screens ---- */
+@media (max-width: 980px){
+  .g4{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(2,1fr)}
+  .side{width:180px}
+  .topbar .stat{display:none}
+}
+@media (max-width: 680px){
+  .side{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-100%);transition:transform .2s ease;box-shadow:var(--shadow)}
+  .side.open{transform:translateX(0)}
+  .hamburger{display:flex !important}
+  .g4,.g3,.g2{grid-template-columns:1fr}
+  .content{padding:14px}
+  .ev-line{grid-template-columns:56px 1fr 60px}
+  .ev-line > :nth-child(2),.ev-line > :nth-child(5){display:none}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useRef,useCallback,useMemo} = React;
+
+/* Backend base URL: set window.FRIDAY_API_BASE in a small inline script tag placed
+   ABOVE this one, before it runs, to point at your deployed FastAPI service — for example:
+     window.FRIDAY_API_BASE = "https://friday-backend.onrender.com";
+   Falls back to same-host:8000 for local `uvicorn main:app --port 8000` development. */
+const API = (window.FRIDAY_API_BASE) || (location.protocol + "//" + location.hostname + ":8000");
+const WS = API.replace("http", "ws") + "/ws";
+
+async function api(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+const post = (p,body) => api(p, {method:"POST", headers: body?{"Content-Type":"application/json"}:{}, body: body?JSON.stringify(body):undefined});
+
+const NAV = [
+  ["overview","Overview"],["live","Live Monitor"],["incidents","Incidents"],
+  ["rca","RCA Investigation"],["timeline","Timeline"],["deps","Dependency Graph"],
+  ["blast","Blast Radius"],["changed","What Changed?"],["replay","Incident Replay"],
+  ["copilot","AI Copilot"],["sources","Telemetry Sources"],["settings","Settings"],
+];
+
+function Badge({sev}){
+  const cls = sev==="Critical"?"b-crit":sev==="High"?"b-high":sev==="Medium"?"b-mid":"b-info";
+  return <span className={"badge "+cls}>{sev}</span>;
+}
+
+/* Real SVG line sparkline over backend series data. Renders an explicit "Collecting data…"
+   state instead of a flat/fake line when there isn't enough real data yet. */
+function Sparkline({data, color}){
+  const points = (data||[]).filter(v=>typeof v==="number");
+  if(points.length < 2) return <div className="spark-empty">Collecting data…</div>;
+  const w=240,h=52; const max=Math.max(...points), min=Math.min(...points), range=(max-min)||1;
+  const step = w/(points.length-1);
+  const path = points.map((v,i)=> `${i*step},${h-((v-min)/range)*(h-8)-4}`).join(" ");
+  return <svg className="spark-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+    <polyline points={path} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>;
+}
+
+function Clock(){
+  const [t,setT] = useState(new Date());
+  useEffect(()=>{ const i=setInterval(()=>setT(new Date()),1000); return ()=>clearInterval(i); },[]);
+  return <span className="clock">{t.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span>;
+}
+
+function App(){
+  const [tab,setTab] = useState("overview");
+  const [theme,setTheme] = useState("dark");
+  const [overview,setOverview] = useState(null);
+  const [events,setEvents] = useState([]);
+  const [incidents,setIncidents] = useState([]);
+  const [selected,setSelected] = useState(null);
+  const [story,setStory] = useState(null);
+  const [demoRunning,setDemoRunning] = useState(false);
+  const [wsConnected,setWsConnected] = useState(false);
+  const [apiFailures,setApiFailures] = useState(0);
+  const [navOpen,setNavOpen] = useState(false);
+  const wsRef = useRef(null);
+
+  useEffect(()=>{ document.documentElement.dataset.theme = theme; },[theme]);
+
+  const refreshOverview = useCallback(()=>{
+    api("/api/overview").then(o=>{ setOverview(o); setApiFailures(0); }).catch(()=> setApiFailures(f=>f+1));
+  }, []);
+  const refreshIncidents = useCallback(()=>{ api("/api/incidents").then(list=>{
+      setIncidents(list);
+      setSelected(sel => sel || (list[0] && list[0].id) || null);
+  }).catch(()=>{}); }, []);
+  const refreshStory = useCallback((id)=>{ if(!id) { setStory(null); return; } api(`/api/incidents/${id}/story`).then(setStory).catch(()=>{}); }, []);
+
+  useEffect(()=>{ refreshOverview(); refreshIncidents(); api("/api/events?limit=80").then(setEvents).catch(()=>{}); },[]);
+  useEffect(()=>{ refreshStory(selected); },[selected]);
+
+  useEffect(()=>{
+    let ws, closedByUs = false;
+    function connect(){
+      ws = new WebSocket(WS); wsRef.current = ws;
+      ws.onopen = ()=> setWsConnected(true);
+      ws.onclose = ()=>{ setWsConnected(false); if(!closedByUs) setTimeout(connect, 2000); };
+      ws.onerror = ()=> setWsConnected(false);
+      ws.onmessage = (m)=>{
+        const msg = JSON.parse(m.data);
+        if(msg.type==="event"){ setEvents(ev=>[msg.data,...ev].slice(0,150)); refreshOverview(); }
+        else if(msg.type==="incident"){ refreshIncidents(); refreshOverview(); refreshStory(selected); }
+        else if(msg.type==="refresh"){ refreshOverview(); refreshIncidents(); refreshStory(selected); }
+      };
+    }
+    connect();
+    const poll = setInterval(refreshOverview, 6000);
+    return ()=>{ closedByUs = true; ws && ws.close(); clearInterval(poll); };
+  },[selected]);
+
+  const startDemo = async ()=>{ setDemoRunning(true); await post("/api/demo/start"); refreshOverview(); };
+  const stopDemo = async ()=>{ setDemoRunning(false); await post("/api/demo/stop"); };
+  const resetDemo = async ()=>{ setDemoRunning(false); await post("/api/demo/reset"); setEvents([]); setStory(null); setSelected(null); refreshIncidents(); refreshOverview(); };
+
+  useEffect(()=>{ if(overview) setDemoRunning(overview.demo_running); },[overview]);
+
+  const active = incidents.find(i=>i.id===selected);
+  // Backend is considered unreachable only after several consecutive failed polls — avoids a
+  // false "offline" flash on one dropped request — and is judged independently of the
+  // WebSocket, since the two can fail independently.
+  const backendOffline = apiFailures >= 3;
+
+  return <div className="app">
+    {navOpen && <div className="nav-backdrop" onClick={()=>setNavOpen(false)}/>}
+    <div className={"side"+(navOpen?" open":"")}>
+      <div className="brand">
+        <div className="brand-icon">F</div>
+        <div>
+          <div className="f">FRIDAY</div>
+          <div className="sub">AI Incident Investigation &amp;<br/>Root-Cause Analysis</div>
+        </div>
+      </div>
+      <div className="nav">
+        {NAV.map(([k,label])=>
+          <button key={k} className={tab===k?"active":""} onClick={()=>{setTab(k); setNavOpen(false);}}>
+            <span className="dot" style={{background: (k==="incidents"&&incidents.some(i=>i.status!=="Resolved"&&i.status!=="Closed"))?"var(--red)":"var(--text-faint)"}}/>
+            {label}
+          </button>)}
+      </div>
+      <div className="side-foot mono">
+        <span>{backendOffline ? "OFFLINE" : overview ? `${overview.eps}/s events` : "connecting…"}</span>
+      </div>
+    </div>
+    <div className="main">
+      <div className="topbar">
+        <div className="row">
+          <button className="icon-btn hamburger" onClick={()=>setNavOpen(o=>!o)}>☰</button>
+          <h1>{NAV.find(n=>n[0]===tab)?.[1]}</h1>
+        </div>
+        <div className="row" style={{gap:14}}>
+          <Clock/>
+          <span className={"conn-pill "+(wsConnected?"live":"down")}>
+            <span className="conn-dot"/>{wsConnected ? "LIVE" : "OFFLINE"}
+          </span>
+          {overview && <span className={"badge "+(overview.health==="Critical"?"b-crit":overview.health==="Degraded"?"b-high":"b-ok")}>{overview.health}</span>}
+          {!demoRunning
+            ? <button className="btn btn-amber" onClick={startDemo}>▶ Start Live Demo (Insta)</button>
+            : <button className="btn" onClick={stopDemo}>■ Stop Demo</button>}
+          <button className="btn btn-ghost" onClick={resetDemo}>Reset</button>
+          <button className="icon-btn" title="Toggle theme" onClick={()=>setTheme(t=>t==="dark"?"light":"dark")}>{theme==="dark"?"☀":"☾"}</button>
+        </div>
+      </div>
+      {backendOffline ? (
+        <div className="offline-screen">
+          <div className="offline-card">
+            <div className="dot" style={{width:10,height:10,borderRadius:"50%",margin:"0 auto 14px"}}/>
+            <h2>Backend offline</h2>
+            <p>FRIDAY cannot currently receive telemetry or reach its API. The dashboard will resume automatically once the connection is restored — nothing below is being shown as "live" while this is up.</p>
+            <div className="target mono">{API}</div>
+          </div>
+        </div>
+      ) : (
+      <div className="content">
+        {tab==="overview" && <Overview overview={overview} incidents={incidents} setTab={setTab} setSelected={setSelected} events={events} story={story} selected={selected}/>}
+        {tab==="live" && <Live events={events} demoRunning={demoRunning}/>}
+        {tab==="incidents" && <Incidents incidents={incidents} selected={selected} setSelected={setSelected} setTab={setTab}/>}
+        {tab==="rca" && <RCA story={story} incident={active} incidents={incidents} selected={selected} setSelected={setSelected} refreshAll={()=>{refreshIncidents();refreshStory(selected);refreshOverview();}}/>}
+        {tab==="timeline" && <TimelineTab story={story} incidents={incidents} selected={selected} setSelected={setSelected}/>}
+        {tab==="deps" && <DepsTab story={story} incidents={incidents} selected={selected} setSelected={setSelected}/>}
+        {tab==="blast" && <BlastTab story={story} incidents={incidents} selected={selected} setSelected={setSelected}/>}
+        {tab==="changed" && <ChangedTab story={story} incidents={incidents} selected={selected} setSelected={setSelected}/>}
+        {tab==="replay" && <ReplayTab incident={active} selected={selected}/>}
+        {tab==="copilot" && <Copilot incidents={incidents} selected={selected} setSelected={setSelected}/>}
+        {tab==="sources" && <Sources/>}
+        {tab==="settings" && <Settings/>}
+      </div>
+      )}
+    </div>
+  </div>;
+}
+
+function IncidentPicker({incidents,selected,setSelected}){
+  if(!incidents.length) return null;
+  return <div className="row" style={{marginBottom:16}}>
+    <span className="section-label" style={{margin:0}}>Incident</span>
+    <select value={selected||""} onChange={e=>setSelected(e.target.value)} style={{background:"var(--panel-solid)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:6,padding:"7px 10px",fontFamily:"var(--mono)",fontSize:12.5}}>
+      {incidents.map(i=><option key={i.id} value={i.id}>{i.id} — {i.title||i.reason} ({i.status})</option>)}
+    </select>
+  </div>;
+}
+
+/* Plain-language framing of the leading hypothesis for the AI RCA snapshot below — built
+   only from fields the backend actually returned (title / supporting evidence / narrative);
+   nothing here is invented if the backend has no active incident or no dominant hypothesis. */
+function RcaSnapshot({story, setTab}){
+  if(!story) return null;
+  const a = story.analysis; const h = a.hypotheses && a.hypotheses[0];
+  return <div className="rca-spot">
+    <div className="between">
+      <div>
+        <div className="eyebrow">AI ROOT-CAUSE ANALYSIS</div>
+        <h2>{h ? h.title : (a.verdict || "No dominant hypothesis yet")}</h2>
+      </div>
+      {h && <Badge sev={story.incident.severity}/>}
+    </div>
+    {h && <div className="conf-ring">
+      <div className="conf-num" style={{color: h.confidence>=.6?"var(--red)":h.confidence>=.35?"var(--amber)":"var(--text-dim)"}}>{(h.confidence*100).toFixed(0)}%</div>
+      <div>
+        <div style={{fontSize:12.5,color:"var(--text-dim)"}}>confidence · {h.strength} evidence</div>
+        <div className="progress" style={{width:160}}><div style={{width:(h.confidence*100)+"%"}}/></div>
+      </div>
+    </div>}
+    <p className="plain">{a.narrative}</p>
+    {h && h.supporting.length>0 && <ul className="evd sup">{h.supporting.slice(0,3).map((s,i)=><li key={i}>{s}</li>)}</ul>}
+    <div style={{marginTop:12}}><a className="linklike" onClick={()=>setTab("rca")}>View full investigation →</a></div>
+  </div>;
+}
+
+function Overview({overview,incidents,setTab,setSelected,events,story,selected}){
+  if(!overview) return <div className="empty">Connecting to FRIDAY backend…</div>;
+  const activeIncs = incidents.filter(i=>i.status!=="Resolved"&&i.status!=="Closed");
+  const healthColor = overview.health==="Critical"?"var(--red)":overview.health==="Degraded"?"var(--amber)":"var(--green)";
+  return <div>
+    <div className="grid g4" style={{marginBottom:16}}>
+      <div className="card kpi"><h3>System Health</h3><b style={{color:healthColor}}>{overview.health}</b><span>{overview.active_incidents} active incident(s)</span></div>
+      <div className="card kpi"><h3>Services Monitored</h3><b>{overview.services}</b><span>distinct sources seen</span></div>
+      <div className="card kpi"><h3>Error Rate</h3><b style={{color: overview.error_rate>5?"var(--red)":"var(--text)"}}>{overview.error_rate}%</b><span>HTTP 5xx (rolling)</span></div>
+      <div className="card kpi"><h3>Telemetry Events/sec</h3><b>{overview.eps}</b><span>{overview.avg_latency?`avg latency ${Math.round(overview.avg_latency)}ms`:"—"}</span></div>
+    </div>
+
+    {/* AI RCA visual centerpiece — only rendered when there's a real incident to explain */}
+    {story && activeIncs.length>0 && <div style={{marginBottom:16}}><RcaSnapshot story={story} setTab={setTab}/></div>}
+
+    <div className="card" style={{marginBottom:16}}>
+      <div className="between"><h3 style={{margin:0}}>Live Telemetry</h3><span className="chip">real backend series only</span></div>
+      <div className="grid g4">
+        <div className="chart-tile"><div className="chart-tile-head"><span>API Latency</span><strong>{overview.series.api_latency_ms?.length?`${Math.round(overview.series.api_latency_ms.at(-1))}ms`:"—"}</strong></div><Sparkline data={overview.series.api_latency_ms} color="var(--blue)"/></div>
+        <div className="chart-tile"><div className="chart-tile-head"><span>PostgreSQL Latency</span><strong>{overview.series.db_latency_ms?.length?`${Math.round(overview.series.db_latency_ms.at(-1))}ms`:"—"}</strong></div><Sparkline data={overview.series.db_latency_ms} color="var(--violet)"/></div>
+        <div className="chart-tile"><div className="chart-tile-head"><span>Error Rate</span><strong>{overview.series.http_5xx_pct?.length?`${overview.series.http_5xx_pct.at(-1).toFixed(1)}%`:"—"}</strong></div><Sparkline data={overview.series.http_5xx_pct} color="var(--red)"/></div>
+        <div className="chart-tile"><div className="chart-tile-head"><span>Requests / sec</span><strong>{overview.series.rps?.length?Math.round(overview.series.rps.at(-1)):"—"}</strong></div><Sparkline data={overview.series.rps} color="var(--green)"/></div>
+      </div>
+    </div>
+
+    {overview.early && overview.early.length>0 &&
+      <div className="card" style={{marginBottom:16,borderColor:"var(--amber)"}}>
+        <h3 style={{color:"var(--amber)"}}>⚠️ Early Warning — Elevated Failure Risk</h3>
+        {overview.early.map((w,i)=><div key={i} style={{marginBottom:10,paddingBottom:10,borderBottom:i<overview.early.length-1?"1px solid var(--border-soft)":"none"}}>
+          <div className="between">
+            <div style={{fontSize:13}}><b>{w.signal}</b> — trend {w.trend.join(" → ")} <span style={{color:"var(--text-faint)"}}>(threshold {w.limit})</span></div>
+            <span className={"badge "+(w.risk>=70?"b-crit":w.risk>=50?"b-high":"b-mid")}>{w.risk}% risk</span>
+          </div>
+          <div className="progress"><div style={{width:w.risk+"%",background: w.risk>=70?"var(--red)":"var(--amber)"}}/></div>
+          <div style={{color:"var(--text-faint)",fontSize:11.5,marginTop:3}}>Rising at ~{w.slope}/tick · {w.eta}</div>
+        </div>)}
+      </div>}
+    <div className="grid g2">
+      <div className="card">
+        <div className="between"><h3 style={{margin:0}}>Active Incidents</h3><a className="linklike" onClick={()=>setTab("incidents")}>View all →</a></div>
+        {activeIncs.length===0 ? <div className="empty">No active incidents. All systems nominal.</div> :
+          activeIncs.map(i=><div key={i.id} className="inc-card" onClick={()=>{setSelected(i.id);setTab("rca");}}>
+            <div className="between"><b className="mono">{i.id}</b><Badge sev={i.severity}/></div>
+            <div style={{margin:"6px 0",fontSize:13}}>{i.title||i.reason}</div>
+            <div style={{color:"var(--text-faint)",fontSize:11.5}}>{i.service} · started {i.started} · {i.affected_services} services affected</div>
+          </div>)}
+      </div>
+      <div className="card">
+        <h3>FRIDAY Intelligence Pipeline</h3>
+        <div className="pipeline">
+          {["COLLECT","UNDERSTAND","CORRELATE","RECONSTRUCT","INVESTIGATE","EXPLAIN","RECOMMEND","VERIFY","LEARN"].map((s,i,arr)=>
+            <React.Fragment key={s}><span className="pnode">{s}</span>{i<arr.length-1 && <span className="parrow">→</span>}</React.Fragment>)}
+        </div>
+        <p style={{color:"var(--text-dim)",fontSize:12.5,lineHeight:1.6,marginTop:14}}>
+          FRIDAY turns raw, heterogeneous telemetry from Insta's stack into an explainable incident story:
+          it collects logs/metrics/traces, correlates them across services, reconstructs a timeline,
+          proposes evidence-grounded root-cause hypotheses, recommends investigation steps, and verifies recovery.
+        </p>
+        <div style={{marginTop:10}}>
+          <span className="chip">Uploaded logs</span><span className="chip">Live simulated stream</span>
+          <span className="chip">HTTP ingestion API</span><span className="chip">OpenTelemetry adapter</span>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function Live({events,demoRunning}){
+  const [filter,setFilter] = useState("ALL");
+  const filtered = events.filter(e=> filter==="ALL" || e.severity===filter);
+  return <div>
+    <div className="row" style={{marginBottom:12}}>
+      {!demoRunning && <span style={{color:"var(--text-faint)",fontSize:12.5}}>Start the live demo, upload logs, or POST to the ingestion API to see events here.</span>}
+      {demoRunning && <span className="demolabel">● DEMO / SIMULATED TELEMETRY</span>}
+      <div style={{flex:1}}/>
+      {["ALL","ERROR","WARNING","INFO"].map(f=><button key={f} className="btn btn-ghost" style={{opacity:filter===f?1:.55}} onClick={()=>setFilter(f)}>{f}</button>)}
+    </div>
+    <div className="card" style={{padding:0}}>
+      <div className="ev-line" style={{color:"var(--text-faint)",fontSize:11,textTransform:"uppercase",fontWeight:600}}>
+        <div>Time</div><div>Service</div><div>Severity</div><div>Message</div><div>Trace</div>
+      </div>
+      {filtered.length===0 && <div className="empty">No telemetry yet.</div>}
+      {filtered.map((e,i)=><div className={"ev-line"+(i===0?" new-row":"")} key={i}>
+        <div className="mono" style={{color:"var(--text-faint)"}}>{(e.ts||"").slice(11,19)}</div>
+        <div>{e.service}</div>
+        <div><span className={"sev sev-"+e.severity}>{e.severity}</span></div>
+        <div className="msg" title={e.message}>{e.metric ? `${e.metric} = ${e.value}` : e.message}</div>
+        <div className="trace">{e.trace_id||"—"}</div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function Incidents({incidents,selected,setSelected,setTab}){
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b>Start the live demo or send telemetry to detect one.</div>;
+  return <div className="grid g2">
+    {incidents.map(i=><div key={i.id} className={"inc-card"+(i.id===selected?" sel":"")} onClick={()=>{setSelected(i.id); setTab("rca");}}>
+      <div className="between"><b className="mono">{i.id}</b><Badge sev={i.severity}/></div>
+      <div style={{margin:"8px 0 4px",fontWeight:600}}>{i.title||i.reason}</div>
+      <div style={{color:"var(--text-dim)",fontSize:12.5}}>{i.service} · {i.status}</div>
+      <div style={{color:"var(--text-faint)",fontSize:11.5,marginTop:6}}>
+        started {i.started} · {i.affected_services} services · <span className={"srclabel src-"+i.source}>{i.source}</span>
+      </div>
+    </div>)}
+  </div>;
+}
+
+function HypCard({h}){
+  return <div className="hyp">
+    <div className="hh">
+      <div><div className="title">{h.title}</div><div style={{color:"var(--text-faint)",fontSize:12,marginTop:2}}>{h.why}</div></div>
+      <span className={"badge "+(h.strength==="Strong"?"b-crit":h.strength==="Moderate"?"b-high":h.strength==="Partial"?"b-mid":"b-info")}>{h.strength} · {(h.confidence*100).toFixed(0)}%</span>
+    </div>
+    {h.supporting.length>0 && <><div className="section-label">Supporting evidence</div><ul className="evd sup">{h.supporting.map((s,i)=><li key={i}>{s}</li>)}</ul></>}
+    {h.missing.length>0 && <><div className="section-label">Missing evidence</div><ul className="evd mis">{h.missing.map((s,i)=><li key={i}>{s}</li>)}</ul></>}
+    {h.conflicting.length>0 && <><div className="section-label">Conflicting evidence</div><ul className="evd con">{h.conflicting.map((s,i)=><li key={i}>{s}</li>)}</ul></>}
+  </div>;
+}
+
+function RCA({story,incident,incidents,selected,setSelected,refreshAll}){
+  const [subtab,setSubtab] = useState("story");
+  const [busy,setBusy] = useState(false);
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b>Start the live demo to generate one.</div>;
+  if(!story) return <div className="empty">Loading investigation…</div>;
+  const a = story.analysis;
+  const act = async (action)=>{ setBusy(true); await post(`/api/incidents/${selected}/action`,{action}); await refreshAll(); setBusy(false); };
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    <div className="between" style={{marginBottom:10}}>
+      <div><b className="mono" style={{fontSize:16}}>{selected}</b> <Badge sev={story.incident.severity}/> <span style={{marginLeft:8,color:"var(--text-dim)"}}>{story.incident.status}</span></div>
+    </div>
+    <div className="pill-tabs">
+      {["story","evidence","quality","actions"].map(t=><button key={t} className={subtab===t?"active":""} onClick={()=>setSubtab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>)}
+    </div>
+    {subtab==="story" && <div className="grid g2">
+      <div>
+        <div className="card" style={{marginBottom:14}}>
+          <h3>What happened?</h3>
+          <p style={{fontSize:13.5,lineHeight:1.7,color:"var(--text)"}}>{a.narrative}</p>
+        </div>
+        <div className="card" style={{marginBottom:14}}>
+          <h3>Correlated Signals</h3>
+          <ul className="evd sup">{a.correlated.map((c,i)=><li key={i}>{c}</li>)}</ul>
+        </div>
+        {story.analysis.similar && <div className="card">
+          <h3>Similar Previous Incident Found</h3>
+          <div style={{fontSize:13}}><b>{story.analysis.similar.id}</b> ({(story.analysis.similar.similarity*100).toFixed(0)}% similar) — {story.analysis.similar.summary}</div>
+          <div style={{color:"var(--text-dim)",fontSize:12.5,marginTop:6}}>Resolution: {story.analysis.similar.resolution}</div>
+        </div>}
+      </div>
+      <div>
+        <h3 className="section-label" style={{fontSize:12}}>Candidate Root-Cause Hypotheses</h3>
+        {a.hypotheses.length===0 && <div className="empty">{a.verdict}</div>}
+        {a.hypotheses.map((h,i)=><HypCard key={i} h={h}/>)}
+      </div>
+    </div>}
+    {subtab==="evidence" && <div className="grid g2">
+      <div className="card"><h3>Related Logs</h3>
+        {(a.related.logs||[]).map((l,i)=><div key={i} style={{fontSize:12.5,padding:"6px 0",borderBottom:"1px solid var(--border-soft)"}}>
+          <span className="mono" style={{color:"var(--text-faint)"}}>{l.time}</span> · {l.service} — {l.message}</div>)}
+      </div>
+      <div className="card"><h3>Related Metrics</h3>
+        {(a.related.metrics||[]).map((m,i)=><div key={i} style={{fontSize:12.5,padding:"6px 0",borderBottom:"1px solid var(--border-soft)"}}>
+          <span className="mono" style={{color:"var(--text-faint)"}}>{m.time}</span> · {m.service} — {m.metric}: <b>{m.value}</b></div>)}
+      </div>
+      <div className="card" style={{gridColumn:"1 / -1"}}><h3>Related Traces</h3>
+        {(a.related.traces||[]).length===0 && <div className="empty">No trace telemetry available.</div>}
+        {(a.related.traces||[]).map((t,i)=><div key={i} className="ev-line" style={{gridTemplateColumns:"70px 100px 100px 1fr"}}>
+          <div className="mono">{t.time}</div><div>{t.service}</div><div className="trace">{t.trace_id}</div><div className="msg">{t.message}</div></div>)}
+      </div>
+    </div>}
+    {subtab==="quality" && <div className="card">
+      <h3>Telemetry Quality Check</h3>
+      {a.quality.map((q,i)=><div key={i} className="settingsrow"><span className="k">{q.name}</span>
+        <span className="v" style={{color: q.status==="ok"?"var(--green)":q.status==="partial"?"var(--amber)":"var(--red)"}}>
+          {q.status==="ok"?"✓ Good":q.status==="partial"?"⚠ Partial":"❌ Missing"}</span></div>)}
+      <div style={{marginTop:14,padding:12,background:"var(--panel2)",borderRadius:6,fontSize:13,color:"var(--amber)"}}>{a.quality_note}</div>
+    </div>}
+    {subtab==="actions" && <div className="grid g2">
+      <div className="card">
+        <h3>Recommended Investigation</h3>
+        {a.recommendations.map((r,i)=><div key={i} style={{marginBottom:12}}>
+          <div style={{fontWeight:600,fontSize:13}}>{i+1}. {r.step}</div>
+          <div style={{color:"var(--text-dim)",fontSize:12,marginTop:2}}>Why this matters: {r.why}</div>
+        </div>)}
+      </div>
+      <div className="card">
+        <h3>Human Approval Workflow</h3>
+        {a.action ? <div style={{fontSize:13,marginBottom:12}}>Recommended action: <b>{a.action}</b></div> : <div className="empty">No remediation action proposed yet.</div>}
+        <div className="row" style={{flexWrap:"wrap",gap:8}}>
+          <button className="btn" disabled={busy} onClick={()=>act("review")}>Review Evidence</button>
+          <button className="btn btn-amber" disabled={busy} onClick={()=>act("approve")}>Approve Action</button>
+          <button className="btn btn-ghost" disabled={busy} onClick={()=>act("reject")}>Reject</button>
+          <button className="btn btn-ghost" disabled={busy} onClick={()=>act("investigated")}>Mark Investigated</button>
+          <button className="btn btn-ghost" disabled={busy} onClick={()=>act("followup")}>Create Follow-up</button>
+        </div>
+        {story.incident.status!=="Resolved" && <button className="btn" style={{marginTop:14,borderColor:"var(--green)",color:"var(--green)"}} disabled={busy} onClick={()=>act("resolve")}>Mark Resolved &amp; Verify Recovery</button>}
+        {story.verification && story.incident.status==="Resolved" && <div style={{marginTop:14}}>
+          <div className="section-label">Resolution Verification</div>
+          <div style={{fontWeight:600,color: story.verification.status==="recovered"?"var(--green)":"var(--amber)"}}>{story.verification.message}</div>
+          {story.verification.items.map((it,i)=><div key={i} className="settingsrow"><span className="k">{it.label}</span><span className="v">{it.before}{it.unit} → {it.after}{it.unit}</span></div>)}
+        </div>}
+        {story.actions.length>0 && <div style={{marginTop:14}}>
+          <div className="section-label">Action Log</div>
+          {story.actions.map((x,i)=><div key={i} style={{fontSize:11.5,color:"var(--text-faint)",fontFamily:"var(--mono)"}}>{x.ts.slice(11,19)} — {x.action}</div>)}
+        </div>}
+      </div>
+    </div>}
+  </div>;
+}
+
+function TimelineTab({story,incidents,selected,setSelected}){
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b></div>;
+  if(!story) return <div className="empty">Loading…</div>;
+  const tl = story.analysis.timeline;
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    <div className="card">
+      <h3>Incident Timeline Reconstruction</h3>
+      {tl.length===0 && <div className="empty">No timeline events.</div>}
+      {tl.map((t,i)=><div key={i} className="evline">
+        <span className={"stagepill stg-"+t.stage}>{t.stage}</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13}}><span className="mono" style={{color:"var(--text-faint)"}}>{t.time}</span> · <b>{t.service}</b> {t.count>1 && <span style={{color:"var(--text-faint)"}}>×{t.count}</span>}</div>
+          <div style={{color:"var(--text-dim)",fontSize:12.5}}>{t.text}{t.trace_id && <span className="trace"> · {t.trace_id}</span>}</div>
+        </div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function DepsTab({story,incidents,selected,setSelected}){
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b></div>;
+  if(!story) return <div className="empty">Loading…</div>;
+  const d = story.deps;
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    <div className="card" style={{position:"relative",height:420,overflow:"hidden"}}>
+      <div className="between">
+        <h3 style={{margin:0}}>Dependency Graph {d.suspect && <span style={{color:"var(--text-dim)",fontWeight:400}}> — suspected root: {d.suspect}</span>}</h3>
+        {d.discovered_edges>0 && <span className="badge b-info">{d.discovered_edges} edge(s) auto-discovered from trace correlation</span>}
+      </div>
+      <svg style={{position:"absolute",inset:0,top:0,left:0}} width="100%" height="100%">
+        {d.edges.map((e,i)=>{
+          const a=d.nodes.find(n=>n.id===e.a), b=d.nodes.find(n=>n.id===e.b);
+          if(!a||!b) return null;
+          return <line key={i} x1={a.x} y1={a.y+30} x2={b.x} y2={b.y+30} stroke={e.hot?"var(--red)":e.source==="discovered"?"var(--blue)":"var(--border)"}
+            strokeWidth={e.hot?2:1.5} strokeDasharray={e.source==="discovered"?"5,3":"none"}/>;
+        })}
+      </svg>
+      {d.nodes.map(n=><div key={n.id} className={"svcnode svc-"+n.status} style={{left:n.x,top:n.y+30}}>
+        <div className="svcbox">{n.label}</div><div className="tel">{n.telemetry}</div>
+      </div>)}
+    </div>
+    <div className="row" style={{marginTop:12,gap:18,fontSize:12,color:"var(--text-dim)",flexWrap:"wrap"}}>
+      <span><span style={{color:"var(--red)"}}>■</span> Failing component</span>
+      <span><span style={{color:"var(--amber)"}}>■</span> Affected path</span>
+      <span><span style={{color:"var(--blue)"}}>┄┄</span> Auto-discovered from trace correlation</span>
+      <span><span style={{color:"var(--text-dim)"}}>■</span> Healthy</span>
+    </div>
+  </div>;
+}
+
+function BlastTab({story,incidents,selected,setSelected}){
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b></div>;
+  if(!story) return <div className="empty">Loading…</div>;
+  const b = story.blast;
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    <div className="grid g4" style={{marginBottom:14}}>
+      <div className="card kpi"><h3>Impact Score</h3><b style={{color: b.impact_score>=70?"var(--red)":b.impact_score>=40?"var(--amber)":"var(--green)"}}>{b.impact_score}</b><span>/ 100</span></div>
+      <div className="card kpi"><h3>Affected Requests</h3><b>{b.affected_requests.toLocaleString()}</b><span>integrated over incident window</span></div>
+      <div className="card kpi"><h3>Affected Users {b.estimate?"(est.)":""}</h3><b>~{b.affected_users.toLocaleString()}</b><span>{b.estimate?"session-density estimate":"from request IDs"}</span></div>
+      <div className="card kpi"><h3>Affected Traces</h3><b>{b.affected_traces}</b></div>
+    </div>
+    <div className="grid g2">
+      <div className="card">
+        <h3>Per-Service Breakdown</h3>
+        {(b.per_service||[]).length===0 && <div className="empty">No per-service telemetry.</div>}
+        {(b.per_service||[]).map((p,i)=><div key={i} style={{marginBottom:8}}>
+          <div className="between" style={{fontSize:12.5}}><span>{p.service}</span><span className="mono" style={{color: p.error_rate>10?"var(--red)":"var(--text-dim)"}}>{p.errors}/{p.events} errors ({p.error_rate}%)</span></div>
+          <div className="progress"><div style={{width:Math.min(100,p.error_rate)+"%",background: p.error_rate>10?"var(--red)":"var(--amber)"}}/></div>
+        </div>)}
+        <div className="section-label">Upstream impact</div>
+        <div style={{fontSize:13,color:"var(--text-dim)"}}>{b.upstream.length?b.upstream.join(" → "):"none"}</div>
+        <div className="section-label">Downstream impact</div>
+        <div style={{fontSize:13,color:"var(--text-dim)"}}>{b.downstream.length?b.downstream.join(", "):"none"}</div>
+      </div>
+      <div className="card">
+        <h3>Affected Endpoints</h3>
+        {b.endpoints.length===0 && <div className="empty">No endpoint telemetry captured.</div>}
+        {b.endpoints.map((e,i)=><div key={i} className="settingsrow"><span className="k mono">{e.endpoint}</span><span className="v">{e.hits} hits</span></div>)}
+      </div>
+    </div>
+    <div style={{marginTop:12,color:"var(--text-faint)",fontSize:12}}>ⓘ {b.note}</div>
+  </div>;
+}
+
+function ChangedTab({story,incidents,selected,setSelected}){
+  if(!incidents.length) return <div className="empty"><b>No incidents yet</b></div>;
+  if(!story) return <div className="empty">Loading…</div>;
+  const c = story.changes;
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    <div className="grid g2">
+      <div className="card">
+        <h3>What Changed Before the Incident?</h3>
+        {c.changes.length===0 && <div className="empty">No deployment, config, or restart events found.</div>}
+        {c.changes.map((x,i)=><div key={i} style={{padding:"9px 0",borderBottom:"1px solid var(--border-soft)"}}>
+          <div className="mono" style={{color:"var(--text-faint)",fontSize:11.5}}>{x.ts.slice(11,19)}</div>
+          <div style={{fontSize:13}}>{x.message}</div>
+        </div>)}
+        <div style={{marginTop:12,padding:12,background:"var(--panel2)",borderRadius:6,fontSize:12.5,color:"var(--amber)"}}>{c.note}</div>
+      </div>
+      <div className="card">
+        <h3>Before vs After (metric averages)</h3>
+        {c.comparison.map((m,i)=><div key={i} className="settingsrow"><span className="k mono">{m.metric}</span>
+          <span className="v">{m.before} → <b style={{color: m.now>m.before*1.3?"var(--red)":"var(--text)"}}>{m.now}</b></span></div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+function ReplayTab({incident,selected}){
+  const [steps,setSteps] = useState([]);
+  const [i,setI] = useState(0);
+  const [playing,setPlaying] = useState(false);
+  const [speed,setSpeed] = useState(1);
+  useEffect(()=>{ setSteps([]); setI(0); setPlaying(false); if(selected) post(`/api/incidents/${selected}/replay`).then(r=>setSteps(r.steps)); },[selected]);
+  useEffect(()=>{
+    if(!playing) return;
+    const t = setInterval(()=>setI(v=> v<steps.length-1 ? v+1 : (setPlaying(false), v)), 700/speed);
+    return ()=>clearInterval(t);
+  },[playing,speed,steps.length]);
+  if(!selected) return <div className="empty"><b>No incidents yet</b></div>;
+  if(!steps.length) return <div className="empty">Loading replay…</div>;
+  return <div>
+    <div className="card" style={{marginBottom:14}}>
+      <div className="row" style={{marginBottom:10}}>
+        <button className="btn btn-amber" onClick={()=>setPlaying(p=>!p)}>{playing?"⏸ Pause":"▶ Play"}</button>
+        <button className="btn btn-ghost" onClick={()=>{setI(0);setPlaying(false);}}>⟲ Restart</button>
+        <select value={speed} onChange={e=>setSpeed(+e.target.value)} style={{background:"var(--panel-solid)",color:"var(--text)",border:"1px solid var(--border)",borderRadius:6,padding:"7px 10px"}}>
+          <option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option>
+        </select>
+        <span style={{color:"var(--text-faint)",fontSize:12}}>Event {i+1} / {steps.length}</span>
+      </div>
+      <input className="replay-scrub" type="range" min="0" max={steps.length-1} value={i} onChange={e=>setI(+e.target.value)}/>
+    </div>
+    <div className="grid g2">
+      <div className="card">
+        <h3>Failure Propagation</h3>
+        {steps.slice(Math.max(0,i-6),i+1).map((s,idx,arr)=><div key={s.i} className={"step-item "+(idx===arr.length-1?"active":"past")}>
+          <span className={"stagepill stg-"+(s.stage||"downstream")}>{s.stage||"event"}</span>
+          <div><div style={{fontSize:13}}><span className="mono" style={{color:"var(--text-faint)"}}>{s.time}</span> · <b>{s.service}</b></div>
+          <div style={{color:"var(--text-dim)",fontSize:12.5}}>{s.text}</div></div>
+        </div>)}
+      </div>
+      <div className="card">
+        <h3>Event Detail</h3>
+        {steps[i] && <div>
+          <div className="settingsrow"><span className="k">Time</span><span className="v">{steps[i].time}</span></div>
+          <div className="settingsrow"><span className="k">Service</span><span className="v">{steps[i].service}</span></div>
+          <div className="settingsrow"><span className="k">Severity</span><span className="v">{steps[i].severity}</span></div>
+          <div className="settingsrow"><span className="k">Trace</span><span className="v">{steps[i].trace_id||"—"}</span></div>
+          <div style={{marginTop:10,fontSize:13,color:"var(--text)"}}>{steps[i].text}</div>
+        </div>}
+      </div>
+    </div>
+  </div>;
+}
+
+function Copilot({incidents,selected,setSelected}){
+  const [msgs,setMsgs] = useState([{role:"ai",text:"I'm FRIDAY's incident copilot. Select an incident and ask me anything — I'll answer using only the collected evidence, and remember this conversation as we go."}]);
+  const [q,setQ] = useState("");
+  const [busy,setBusy] = useState(false);
+  const [engine,setEngine] = useState(null);
+  const endRef = useRef(null);
+  useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); },[msgs]);
+  const ask = async (text)=>{
+    if(!text.trim()) return;
+    const history = msgs.filter((m,idx)=>idx>0).map(m=>({role: m.role==="user"?"user":"assistant", content:m.text}));
+    setMsgs(m=>[...m,{role:"user",text}]); setQ(""); setBusy(true);
+    try{ const r = await post("/api/copilot/query",{incident_id:selected, question:text, history}); setMsgs(m=>[...m,{role:"ai",text:r.answer}]); setEngine(r.engine); }
+    catch(e){ setMsgs(m=>[...m,{role:"ai",text:"Sorry, I couldn't reach the incident evidence."}]); }
+    setBusy(false);
+  };
+  const suggestions = ["Why do you think DB is the cause?","What should I check first?","What's the blast radius?","What changed before this started?"];
+  return <div>
+    <IncidentPicker incidents={incidents} selected={selected} setSelected={setSelected}/>
+    {engine && <div style={{marginBottom:8}}><span className={"badge "+(engine==="rules"?"b-info":"b-ok")}>{engine==="rules"?"Rule-based engine":`LLM: ${engine}`}</span></div>}
+    <div className="copilot">
+      <div className="cmsgs">
+        {msgs.map((m,i)=><div key={i} className={"cmsg "+(m.role==="user"?"user":"ai")}>{m.text}</div>)}
+        {busy && <div className="cmsg ai">thinking…</div>}
+        <div ref={endRef}/>
+      </div>
+      <div className="row" style={{flexWrap:"wrap",marginBottom:6}}>
+        {suggestions.map(s=><button key={s} className="btn btn-ghost" style={{fontSize:11.5}} onClick={()=>ask(s)}>{s}</button>)}
+      </div>
+      <div className="cinput">
+        <input type="text" placeholder="Ask about this incident's evidence…" value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ask(q)}/>
+        <button className="btn btn-amber" onClick={()=>ask(q)}>Send</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function Sources(){
+  const [s,setS] = useState(null);
+  useEffect(()=>{ api("/api/sources").then(setS); const t=setInterval(()=>api("/api/sources").then(setS),4000); return ()=>clearInterval(t); },[]);
+  const [uploading,setUploading] = useState(false);
+  const [msg,setMsg] = useState("");
+  const doUpload = async (file)=>{
+    setUploading(true); const fd = new FormData(); fd.append("file",file);
+    try{ const r = await fetch(API+"/api/telemetry/upload",{method:"POST",body:fd}); const j = await r.json(); setMsg(`Parsed ${j.parsed} events from ${j.filename}.`); }
+    catch(e){ setMsg("Upload failed."); }
+    setUploading(false);
+  };
+  if(!s) return <div className="empty">Loading…</div>;
+  return <div className="grid g2">
+    <div className="card">
+      <h3>A. Upload Logs</h3>
+      <p style={{color:"var(--text-dim)",fontSize:12.5}}>Supports .log, .txt, .json, .jsonl. Auto-detects timestamp, severity, service, message, trace ID.</p>
+      <input type="file" accept=".log,.txt,.json,.jsonl" disabled={uploading} onChange={e=>e.target.files[0] && doUpload(e.target.files[0])}/>
+      {msg && <div style={{marginTop:10,fontSize:12.5,color:"var(--green)"}}>{msg}</div>}
+    </div>
+    <div className="card">
+      <h3>B. Live Simulated Stream</h3>
+      <p style={{color:"var(--text-dim)",fontSize:12.5}}>Demo status: <b style={{color: s.demo_running?"var(--green)":"var(--text-faint)"}}>{s.demo_running?"Running":"Stopped"}</b></p>
+      <span className="demolabel">DEMO / SIMULATED TELEMETRY</span>
+      <p style={{color:"var(--text-faint)",fontSize:11.5,marginTop:10}}>Use "Start Live Demo" in the top bar.</p>
+    </div>
+    <div className="card">
+      <h3>C. Generic HTTP Ingestion API</h3>
+      {s.endpoints.map((e,i)=><div key={i} className="chip">{e}</div>)}
+      <div style={{marginTop:10,fontSize:12,color:"var(--text-faint)"}}>Flexible JSON schema: timestamp, service, severity, message, trace_id, request_id, host, environment, metric, value, event_type.</div>
+    </div>
+    <div className="card">
+      <h3>D. OpenTelemetry Adapter</h3>
+      <div className="chip">POST /api/telemetry/otlp</div>
+      <div style={{marginTop:10,fontSize:12,color:"var(--text-faint)"}}>Accepts OTLP-style resourceLogs / resourceMetrics / resourceSpans and normalizes them into FRIDAY's common event model.</div>
+    </div>
+    {s.real_monitors && <div className="card" style={{gridColumn:"1 / -1"}}>
+      <h3>E. Real Infrastructure Monitors</h3>
+      <div className="grid g4">
+        {Object.entries(s.real_monitors).map(([k,v])=><div key={k} className="settingsrow"><span className="k">{k}</span><span className="v" style={{color:v?"var(--green)":"var(--text-faint)"}}>{v?"on":"off"}</span></div>)}
+      </div>
+    </div>}
+    <div className="card" style={{gridColumn:"1 / -1"}}>
+      <h3>Events by Source</h3>
+      {Object.entries(s.counts).length===0 && <div className="empty">No telemetry ingested yet.</div>}
+      {Object.entries(s.counts).map(([k,v])=><div key={k} className="settingsrow"><span className={"srclabel src-"+k}>{k}</span><span className="v">{v} events</span></div>)}
+    </div>
+  </div>;
+}
+
+function Settings(){
+  const [s,setS] = useState(null);
+  useEffect(()=>{ api("/api/settings").then(setS); },[]);
+  if(!s) return <div className="empty">Loading…</div>;
+  return <div className="grid g2">
+    <div className="card">
+      <h3>AI Provider</h3>
+      <div className="settingsrow"><span className="k">Provider</span><span className="v">{s.llm_provider}</span></div>
+      <div className="settingsrow"><span className="k">Model</span><span className="v">{s.llm_model||"—"}</span></div>
+      <div className="settingsrow"><span className="k">API key configured</span><span className="v">{s.llm_key_configured?"yes":"no"}</span></div>
+      <p style={{color:"var(--text-faint)",fontSize:11.5,marginTop:10}}>Configured via <code className="inline">LLM_PROVIDER</code>, <code className="inline">LLM_MODEL</code>, <code className="inline">LLM_API_KEY</code> environment variables. Without a key, FRIDAY falls back to rule-based, evidence-grounded answers — never fabricated telemetry.</p>
+    </div>
+    <div className="card">
+      <h3>Detection Thresholds</h3>
+      {Object.entries(s.thresholds.open).map(([k,v])=><div key={k} className="settingsrow"><span className="k mono">{k}</span><span className="v">opens at {v}</span></div>)}
+      {Object.entries(s.thresholds.anomaly).map(([k,v])=><div key={k} className="settingsrow"><span className="k mono">{k}</span><span className="v">anomalous ≥ {v}</span></div>)}
+    </div>
+    <div className="card">
+      <h3>System</h3>
+      <div className="settingsrow"><span className="k">Database</span><span className="v">{s.database} (SQLite)</span></div>
+      <div className="settingsrow"><span className="k">Simulator tick</span><span className="v">{s.tick_seconds}s</span></div>
+      <div className="settingsrow"><span className="k">API base</span><span className="v">{API}</span></div>
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

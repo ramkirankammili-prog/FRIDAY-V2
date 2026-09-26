@@ -1,0 +1,5 @@
+# Minimal deps for backend/agent.py, run standalone on the Windows/Linux host you want to monitor.
+psutil>=5.9
+requests>=2.31
+# Optional: only needed if AGENT_DOCKER=1 (agent also reports that host's Docker containers)
+docker>=7.0

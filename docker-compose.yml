@@ -1,0 +1,31 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - FRIDAY_DB=/data/friday.db
+      - FRIDAY_TICK=1.5
+      - LLM_PROVIDER=${LLM_PROVIDER:-none}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - PG_DSN=${PG_DSN:-}
+      - MYSQL_DSN=${MYSQL_DSN:-}
+      - REDIS_URL=${REDIS_URL:-}
+      - DOCKER_MONITOR=${DOCKER_MONITOR:-0}
+      - REAL_MONITOR_INTERVAL=${REAL_MONITOR_INTERVAL:-5}
+      - AGENT_TOKEN=${AGENT_TOKEN:-}
+    volumes:
+      - friday-data:/data
+      # Uncomment to let the backend monitor Docker containers on the host (sets DOCKER_MONITOR=1 above too):
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+volumes:
+  friday-data:
