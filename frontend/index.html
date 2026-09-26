@@ -231,7 +231,7 @@ const {useState,useEffect,useRef,useCallback,useMemo} = React;
 
 /* Backend base URL: set window.FRIDAY_API_BASE in a small inline script tag placed
    ABOVE this one, before it runs, to point at your deployed FastAPI service — for example:
-     window.FRIDAY_API_BASE = "https://friday-backend.onrender.com";
+     window.FRIDAY_API_BASE = "https://friday-v2.onrender.com";
    Falls back to same-host:8000 for local `uvicorn main:app --port 8000` development. */
 const API = (window.FRIDAY_API_BASE) || (location.protocol + "//" + location.hostname + ":8000");
 const WS = API.replace("http", "ws") + "/ws";
