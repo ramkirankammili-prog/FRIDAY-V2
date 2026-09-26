@@ -235,7 +235,6 @@ const {useState,useEffect,useRef,useCallback,useMemo} = React;
    Falls back to same-host:8000 for local `uvicorn main:app --port 8000` development. */
 const API = "https://friday-v2.onrender.com";
 const WS = API.replace("http", "ws") + "/ws";
-
 async function api(path, opts){
   const r = await fetch(API+path, opts);
   if(!r.ok) throw new Error(await r.text());

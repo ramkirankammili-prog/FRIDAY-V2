@@ -46,8 +46,8 @@ function App() {
     try {
 
       const response = await fetch(
-        "http://127.0.0.1:8000/metrics/latest"
-      );
+  "https://friday-v2.onrender.com/metrics/latest"
+    );
 
       const data = await response.json();
 
